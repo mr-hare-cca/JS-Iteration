@@ -1,1 +1,189 @@
+name: "Classroom Autograder – Unit 8.3: Iteration – Movie Tickets"
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  autograde:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install test dependencies
+        run: |
+          npm install --save-dev jest@29 jsdom@21 jest-environment-jsdom@29
+
+      - name: Create Jest setup
+        run: |
+          cat > jest.setup.cjs <<'EOF'
+          const { TextEncoder, TextDecoder } = require('util');
+          if (typeof global.TextEncoder === 'undefined') global.TextEncoder = TextEncoder;
+          if (typeof global.TextDecoder === 'undefined') global.TextDecoder = TextDecoder;
+          EOF
+
+      - name: Create Jest config
+        run: |
+          cat > jest.config.cjs <<'EOF'
+          module.exports = {
+            testEnvironment: 'jsdom',
+            setupFiles: ['<rootDir>/jest.setup.cjs'],
+            testMatch: [
+              '**/__tests__/**/*.test.cjs',
+              '**/?(*.)+(spec|test).[jt]s?(x)'
+            ]
+          };
+          EOF
+
+      - name: Create Jest test (Movie Ticket logic)
+        run: |
+          mkdir -p __tests__
+          cat > __tests__/script.test.cjs <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const { JSDOM, VirtualConsole } = require('jsdom');
+
+          function findIndexPath() {
+            const cands = ['index.html','public/index.html','src/index.html','docs/index.html'];
+            return cands.find(p => fs.existsSync(p)) || null;
+          }
+
+          async function waitForLoad(window, ms=50) {
+            await new Promise(res => window.addEventListener('load', res, {once:true}));
+            await new Promise(res => window.setTimeout(res, ms));
+          }
+
+          function readText(document, id) {
+            const el = document.getElementById(id);
+            return (el?.textContent || el?.value || '').trim();
+          }
+
+          function setInput(window, document, id, val) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = String(val);
+            el.dispatchEvent(new window.Event('input',{bubbles:true}));
+            el.dispatchEvent(new window.Event('change',{bubbles:true}));
+          }
+
+          function triggerCalc(window) {
+            try { window.eval('if (typeof calculate==="function"){ calculate(); }'); } catch(_) {}
+            if (typeof window.calculate === 'function') window.calculate();
+          }
+
+          describe("Movie Ticket Price Calculator", () => {
+            let dom, window, document, indexPath;
+            beforeAll(() => {
+              indexPath = findIndexPath();
+              if (!indexPath) throw new Error("index.html not found");
+            });
+
+            beforeEach(async () => {
+              const vconsole = new VirtualConsole();
+              vconsole.on('error',()=>{});
+              dom = await JSDOM.fromFile(indexPath,{
+                runScripts:"dangerously",
+                resources:"usable",
+                pretendToBeVisual:true,
+                virtualConsole:vconsole
+              });
+              window = dom.window;
+              document = window.document;
+              await waitForLoad(window);
+            });
+
+            test("has required elements", () => {
+              expect(document.getElementById("age")).not.toBeNull();
+              expect(document.getElementById("priceOutput")).not.toBeNull();
+            });
+
+            const tests = [
+              {age:5, expected:"7", label:"child"},
+              {age:14, expected:"12", label:"student"},
+              {age:35, expected:"20", label:"adult"},
+              {age:70, expected:"12", label:"senior"}
+            ];
+
+            for (const t of tests) {
+              test(\`displays correct price for a \${t.label} (age=\${t.age})\`, async () => {
+                setInput(window, document, "age", t.age);
+                triggerCalc(window);
+                await new Promise(res => window.setTimeout(res, 25));
+                const txt = readText(document,"priceOutput");
+                expect(txt).toMatch(new RegExp(t.expected));
+              });
+            }
+          });
+          EOF
+
+      - name: Run tests and create JSON results
+        id: jest
+        continue-on-error: true
+        run: |
+          npx jest --runInBand --verbose --json --outputFile=jest-results.json || true
+
+      - name: Upload raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-results
+          path: jest-results.json
+
+      - name: Summarize results for students
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const r = JSON.parse(fs.readFileSync('jest-results.json','utf8'));
+          const total  = r.numTotalTests ?? 0;
+          const passed = r.numPassedTests ?? 0;
+          const failed = r.numFailedTests ?? 0;
+          const all = (r.testResults||[]).flatMap(tr=>tr.assertionResults||[]);
+          function isPassed(label){return all.some(a=>(a.title||a.fullName||'').includes(label)&&a.status==='passed');}
+          const checks=[
+            ["has required elements","Your page must include inputs #age and #priceOutput."],
+            ["displays correct price for a child","Make sure age 0–12 returns $7."],
+            ["displays correct price for a student","Make sure age 13–17 returns $12."],
+            ["displays correct price for an adult","Make sure age 18–64 returns $20."],
+            ["displays correct price for a senior","Make sure age 65+ returns $12."]
+          ];
+          const mark=(ok,label)=>\`\${ok?'✅':'❌'} \${label}\`;
+          let out=[];
+          out.push("# Unit 8.3 Autograder Summary");
+          out.push(\`**Passed:** \${passed}/\${total}  ·  **Failed:** \${failed}\\n\`);
+          out.push("## What you got right / need to fix\\n");
+          for(const [name,hint] of checks){
+            const ok=isPassed(name);
+            out.push(mark(ok,name));
+            if(!ok) out.push("   - Hint: "+hint);
+          }
+          out.push("\\n### Reminders");
+          out.push("- Use an input with id **age** and a button that calls `calculate()`.");
+          out.push("- Display the result in an element with id **priceOutput**.");
+          out.push("- Follow these rules:");
+          out.push("  - 0–12 → $7 (Child)");
+          out.push("  - 13–17 → $12 (Student)");
+          out.push("  - 18–64 → $20 (Adult)");
+          out.push("  - 65+ → $12 (Senior)");
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,out.join('\\n'));
+          NODE
+
+      - name: Set job status from test results
+        if: always()
+        run: |
+          failed=$(node -e "console.log(JSON.parse(require('fs').readFileSync('jest-results.json','utf8')).numFailedTests||0)")
+          if [ "$failed" -gt 0 ]; then
+            echo "Some tests failed ($failed). Marking job as failed."
+            exit 1
+          else
+            echo "All tests passed. Marking job as success."
+            exit 0
+          fi
 
