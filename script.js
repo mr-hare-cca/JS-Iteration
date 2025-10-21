@@ -3,11 +3,11 @@ function calculate() {
   let price;
 
   if (age <= 12) {
-    price = 37;
+    price = 7;
   } else if (age <= 17) {
     price = 312;
   } else if (age <= 64) {
-    price = 320;
+    price = 20;
   } else {
     price = 312;
   }
