@@ -1,4 +1,4 @@
-name: "Classroom Autograder – Unit 8.3: Iteration – Movie Tickets"
+name: "Classroom Autograder – Unit 8.3: Iteration (Movie Ticket Prices)"
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
           };
           EOF
 
-      - name: Create Jest test (Movie Ticket logic)
+      - name: Create Jest tests
         run: |
           mkdir -p __tests__
           cat > __tests__/script.test.cjs <<'EOF'
@@ -51,73 +51,79 @@ jobs:
           const { JSDOM, VirtualConsole } = require('jsdom');
 
           function findIndexPath() {
-            const cands = ['index.html','public/index.html','src/index.html','docs/index.html'];
-            return cands.find(p => fs.existsSync(p)) || null;
+            const candidates = ['index.html', 'public/index.html', 'src/index.html', 'docs/index.html'];
+            for (const c of candidates) if (fs.existsSync(c)) return c;
+            return null;
           }
 
-          async function waitForLoad(window, ms=50) {
-            await new Promise(res => window.addEventListener('load', res, {once:true}));
-            await new Promise(res => window.setTimeout(res, ms));
+          async function wait(ms = 25) {
+            return new Promise(res => setTimeout(res, ms));
           }
 
-          function readText(document, id) {
-            const el = document.getElementById(id);
-            return (el?.textContent || el?.value || '').trim();
+          async function loadDOM() {
+            const indexPath = findIndexPath();
+            if (!indexPath) throw new Error("index.html not found");
+
+            const baseDir = path.dirname(path.resolve(indexPath));
+            const baseUrl = 'file://' + baseDir.replace(/\\+/g, '/') + '/';
+            const vconsole = new VirtualConsole();
+            vconsole.on('error', () => {});
+
+            const dom = await JSDOM.fromFile(indexPath, {
+              url: baseUrl,
+              runScripts: 'dangerously',
+              resources: 'usable',
+              pretendToBeVisual: true,
+              virtualConsole: vconsole
+            });
+
+            await new Promise(res => dom.window.addEventListener('load', res, { once: true }));
+            await wait();
+            return dom;
           }
 
-          function setInput(window, document, id, val) {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.value = String(val);
-            el.dispatchEvent(new window.Event('input',{bubbles:true}));
-            el.dispatchEvent(new window.Event('change',{bubbles:true}));
+          function trigger(window, element, val) {
+            element.value = String(val);
+            element.dispatchEvent(new window.Event('input', { bubbles: true }));
+            element.dispatchEvent(new window.Event('change', { bubbles: true }));
           }
 
-          function triggerCalc(window) {
-            try { window.eval('if (typeof calculate==="function"){ calculate(); }'); } catch(_) {}
-            if (typeof window.calculate === 'function') window.calculate();
+          function getOutput(document) {
+            const el = document.getElementById('priceOutput');
+            if (!el) return '';
+            return (el.textContent || '').trim();
           }
 
           describe("Movie Ticket Price Calculator", () => {
-            let dom, window, document, indexPath;
-            beforeAll(() => {
-              indexPath = findIndexPath();
-              if (!indexPath) throw new Error("index.html not found");
-            });
+            let dom, window, document;
 
             beforeEach(async () => {
-              const vconsole = new VirtualConsole();
-              vconsole.on('error',()=>{});
-              dom = await JSDOM.fromFile(indexPath,{
-                runScripts:"dangerously",
-                resources:"usable",
-                pretendToBeVisual:true,
-                virtualConsole:vconsole
-              });
+              dom = await loadDOM();
               window = dom.window;
               document = window.document;
-              await waitForLoad(window);
             });
 
             test("has required elements", () => {
-              expect(document.getElementById("age")).not.toBeNull();
-              expect(document.getElementById("priceOutput")).not.toBeNull();
+              expect(document.getElementById('age')).not.toBeNull();
+              expect(document.getElementById('priceOutput')).not.toBeNull();
             });
 
-            const tests = [
-              {age:5, expected:"7", label:"child"},
-              {age:14, expected:"12", label:"student"},
-              {age:35, expected:"20", label:"adult"},
-              {age:70, expected:"12", label:"senior"}
+            const cases = [
+              { age: 5, expected: 7, label: "child" },
+              { age: 15, expected: 12, label: "student" },
+              { age: 30, expected: 20, label: "adult" },
+              { age: 70, expected: 12, label: "senior" },
             ];
 
-            for (const t of tests) {
-              test(\`displays correct price for a \${t.label} (age=\${t.age})\`, async () => {
-                setInput(window, document, "age", t.age);
-                triggerCalc(window);
-                await new Promise(res => window.setTimeout(res, 25));
-                const txt = readText(document,"priceOutput");
-                expect(txt).toMatch(new RegExp(t.expected));
+            for (const c of cases) {
+              test(`displays correct price for a ${c.label}`, async () => {
+                const input = document.getElementById('age');
+                expect(input).not.toBeNull();
+                trigger(window, input, c.age);
+                try { window.eval('if (typeof calculate==="function"){ calculate(); }'); } catch {}
+                await wait();
+                const output = getOutput(document);
+                expect(output).toMatch(String(c.expected));
               });
             }
           });
@@ -126,8 +132,7 @@ jobs:
       - name: Run tests and create JSON results
         id: jest
         continue-on-error: true
-        run: |
-          npx jest --runInBand --verbose --json --outputFile=jest-results.json || true
+        run: npx jest --runInBand --verbose --json --outputFile=jest-results.json
 
       - name: Upload raw results
         if: always()
@@ -142,14 +147,13 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const r = JSON.parse(fs.readFileSync('jest-results.json','utf8'));
-      
+
           const total  = r.numTotalTests ?? 0;
           const passed = r.numPassedTests ?? 0;
           const failed = r.numFailedTests ?? 0;
-      
+          const runtimeErrSuites = r.numRuntimeErrorTestSuites ?? 0;
+
           const all = (r.testResults || []).flatMap(tr => tr.assertionResults || []);
-      
-          // Match by short label appearing in title/fullName
           function isPassed(label) {
             return all.some(ar => {
               const t = ar.title || '';
@@ -158,7 +162,7 @@ jobs:
               return matched && ar.status === 'passed';
             });
           }
-      
+
           const checks = [
             ["has required elements", "Your page must include inputs #age and #priceOutput."],
             ["displays correct price for a child",   "Make sure age 0–12 returns $7."],
@@ -166,36 +170,52 @@ jobs:
             ["displays correct price for an adult",  "Make sure age 18–64 returns $20."],
             ["displays correct price for a senior",  "Make sure age 65+ returns $12."]
           ];
-      
-          const checkIcon = ok => ok ? '\\u2705' : '\\u274C'; // ✅ / ❌
+
+          const checkIcon = ok => ok ? '\u2705' : '\u274C';
           const mark = (ok, label) => `${checkIcon(ok)} ${label}`;
-      
-          let out = [];
+
+          const out = [];
           out.push(`# Unit 8.3 Autograder Summary`);
-          out.push(`**Passed:** ${passed}/${total}  ·  **Failed:** ${failed}\n`);
-          out.push(`## What you got right / need to fix\n`);
+          out.push(`**Passed:** ${passed}/${total}  ·  **Failed:** ${failed}`);
+
+          if (total === 0 || runtimeErrSuites > 0) {
+            out.push('');
+            out.push(`> ⚠️ No tests ran. This usually means required files weren't found (e.g., index.html).`);
+          }
+
+          out.push('');
+          out.push(`## What you got right / need to fix`);
+
           for (const [name, hint] of checks) {
             const ok = isPassed(name);
             out.push(mark(ok, name));
             if (!ok) out.push(`   - Hint: ${hint}`);
           }
-          out.push(`\n### Reminders`);
-          out.push(`- Use an input with id **age** and a button that calls calculate().`);
+
+          out.push('');
+          out.push(`### Reminders`);
+          out.push(`- Use an input with id **age** and a button that calls \`calculate()\`.`);
           out.push(`- Display the result in an element with id **priceOutput**.`);
           out.push(`- Brackets: 0–12 → $7, 13–17 → $12, 18–64 → $20, 65+ → $12.`);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\\n'));
-          NODE
 
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n'));
+          NODE
 
       - name: Set job status from test results
         if: always()
         run: |
-          failed=$(node -e "console.log(JSON.parse(require('fs').readFileSync('jest-results.json','utf8')).numFailedTests||0)")
-          if [ "$failed" -gt 0 ]; then
-            echo "Some tests failed ($failed). Marking job as failed."
-            exit 1
-          else
-            echo "All tests passed. Marking job as success."
-            exit 0
-          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const r = JSON.parse(fs.readFileSync('jest-results.json','utf8'));
+          const total  = r.numTotalTests ?? 0;
+          const failed = r.numFailedTests ?? 0;
+          const runtimeErrSuites = r.numRuntimeErrorTestSuites ?? 0;
 
+          if (failed > 0 || runtimeErrSuites > 0 || total === 0) {
+            console.error(`Failing job: failedTests=${failed}, runtimeErrorSuites=${runtimeErrSuites}, totalTests=${total}`);
+            process.exit(1);
+          } else {
+            console.log(`All tests passed: failedTests=${failed}, runtimeErrorSuites=${runtimeErrSuites}, totalTests=${total}`);
+            process.exit(0);
+          }
+          NODE
