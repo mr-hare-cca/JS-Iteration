@@ -109,7 +109,7 @@ jobs:
             });
 
             const cases = [
-              { age: 5, expected: 7, label: "child" },
+              { age: 5,  expected: 7,  label: "child" },
               { age: 15, expected: 12, label: "student" },
               { age: 30, expected: 20, label: "adult" },
               { age: 70, expected: 12, label: "senior" },
@@ -164,15 +164,16 @@ jobs:
           }
 
           const checks = [
-            {label: 'has required elements',  keyword: 'has required elements', hint: 'Your page must include inputs #age and #priceOutput.'},
-            {label: 'displays correct price for a child',   keyword: 'child',   hint: 'Make sure age 0–12 returns $7.'},
-            {label: 'displays correct price for a student', keyword: 'student', hint: 'Make sure age 13–17 returns $12.'},
-            {label: 'displays correct price for an adult',  keyword: 'adult',   hint: 'Make sure age 18–64 returns $20.'},
-            {label: 'displays correct price for a senior',  keyword: 'senior',  hint: 'Make sure age 65+ returns $12.'}
+            {label: 'has required elements',               keyword: 'has required elements', hint: 'Your page must include inputs #age and #priceOutput.'},
+            {label: 'displays correct price for a child',  keyword: 'child',                 hint: 'Make sure age 0–12 returns $7.'},
+            {label: 'displays correct price for a student',keyword: 'student',               hint: 'Make sure age 13–17 returns $12.'},
+            {label: 'displays correct price for an adult', keyword: 'adult',                 hint: 'Make sure age 18–64 returns $20.'},
+            {label: 'displays correct price for a senior', keyword: 'senior',                hint: 'Make sure age 65+ returns $12.'}
           ];
 
-          const checkIcon = ok => ok ? '\\u2705' : '\\u274C';
-          const mark = (ok, label) => checkIcon(ok) + ' ' + label;
+          const checkIcon = ok => '\\u2705';   // default to ✅
+          const crossIcon = '\\u274C';         // ❌
+          function mark(ok, label) { return (ok ? checkIcon(ok) : crossIcon) + ' ' + label; }
 
           const out = [];
           out.push('# Unit 8.3 Autograder Summary');
@@ -180,7 +181,7 @@ jobs:
 
           if (total === 0 || runtimeErrSuites > 0) {
             out.push('');
-            out.push('> \\u26A0\\uFE0F No tests ran. This usually means required files weren\\'t found (e.g., index.html).');
+            out.push("> \\u26A0\\uFE0F No tests ran. This usually means required files weren't found (e.g., index.html).");
           }
 
           out.push('');
@@ -198,7 +199,7 @@ jobs:
           out.push('- Display the result in an element with id **priceOutput**.');
           out.push('- Brackets: 0–12 → $7, 13–17 → $12, 18–64 → $20, 65+ → $12.');
 
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\\n'));
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n'));
           NODE
 
       - name: Set job status from test results
