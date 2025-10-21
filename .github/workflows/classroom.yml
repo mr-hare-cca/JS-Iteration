@@ -42,7 +42,7 @@ jobs:
           };
           EOF
 
-      - name: Create Jest tests
+      - name: Create Jest tests (strict numeric checks + edge cases)
         run: |
           mkdir -p __tests__
           cat > __tests__/script.test.cjs <<'EOF'
@@ -82,16 +82,25 @@ jobs:
             return dom;
           }
 
-          function trigger(window, element, val) {
-            element.value = String(val);
-            element.dispatchEvent(new window.Event('input', { bubbles: true }));
-            element.dispatchEvent(new window.Event('change', { bubbles: true }));
+          function setAgeAndTrigger(window, document, ageVal) {
+            const input = document.getElementById('age');
+            if (!input) return false;
+            input.value = String(ageVal);
+            input.dispatchEvent(new window.Event('input', { bubbles: true }));
+            input.dispatchEvent(new window.Event('change', { bubbles: true }));
+            try { window.eval('if (typeof calculate==="function"){ calculate(); }'); } catch {}
+            if (typeof window.calculate === 'function') window.calculate();
+            return true;
           }
 
-          function getOutput(document) {
+          function readPriceNumber(document) {
             const el = document.getElementById('priceOutput');
-            if (!el) return '';
-            return (el.textContent || '').trim();
+            if (!el) return NaN;
+            const raw = (el.textContent || el.innerText || '').trim();
+            // Extract the FIRST number token (e.g., "$20.00" -> 20; "Your price: 20" -> 20)
+            const m = raw.match(/-?\d+(?:\.\d+)?/);
+            if (!m) return NaN;
+            return Number(m[0]);
           }
 
           describe("Movie Ticket Price Calculator", () => {
@@ -108,22 +117,41 @@ jobs:
               expect(document.getElementById('priceOutput')).not.toBeNull();
             });
 
-            const cases = [
-              { age: 5,  expected: 7,  label: "child" },
-              { age: 15, expected: 12, label: "student" },
-              { age: 30, expected: 20, label: "adult" },
-              { age: 70, expected: 12, label: "senior" },
+            // Core bracket tests (one per bracket)
+            const coreCases = [
+              { age: 5,   expected: 7,  label: "child" },
+              { age: 15,  expected: 12, label: "student" },
+              { age: 30,  expected: 20, label: "adult" },
+              { age: 70,  expected: 12, label: "senior" },
             ];
 
-            for (const c of cases) {
+            for (const c of coreCases) {
               test(`displays correct price for a ${c.label}`, async () => {
-                const input = document.getElementById('age');
-                expect(input).not.toBeNull();
-                trigger(window, input, c.age);
-                try { window.eval('if (typeof calculate==="function"){ calculate(); }'); } catch {}
+                expect(setAgeAndTrigger(window, document, c.age)).toBe(true);
                 await wait();
-                const output = getOutput(document);
-                expect(output).toMatch(String(c.expected));
+                const price = readPriceNumber(document);
+                expect(Number.isNaN(price)).toBe(false);
+                expect(price).toBe(c.expected);
+              });
+            }
+
+            // Edge boundaries to catch off-by-one errors
+            const edgeCases = [
+              { age: 12, expected: 7,  note: "max child" },
+              { age: 13, expected: 12, note: "min student" },
+              { age: 17, expected: 12, note: "max student" },
+              { age: 18, expected: 20, note: "min adult" },
+              { age: 64, expected: 20, note: "max adult" },
+              { age: 65, expected: 12, note: "min senior" },
+            ];
+
+            for (const e of edgeCases) {
+              test(`edge case age=${e.age} -> $${e.expected} (${e.note})`, async () => {
+                expect(setAgeAndTrigger(window, document, e.age)).toBe(true);
+                await wait();
+                const price = readPriceNumber(document);
+                expect(Number.isNaN(price)).toBe(false);
+                expect(price).toBe(e.expected);
               });
             }
           });
@@ -199,7 +227,6 @@ jobs:
 
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n'));
           NODE
-
 
       - name: Set job status from test results
         if: always()
