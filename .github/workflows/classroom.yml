@@ -136,44 +136,56 @@ jobs:
           name: jest-results
           path: jest-results.json
 
-      - name: Summarize results for students
+      - name: Summarize results for students (no solutions shown)
         if: always()
         run: |
           node - <<'NODE'
           const fs = require('fs');
           const r = JSON.parse(fs.readFileSync('jest-results.json','utf8'));
+      
           const total  = r.numTotalTests ?? 0;
           const passed = r.numPassedTests ?? 0;
           const failed = r.numFailedTests ?? 0;
-          const all = (r.testResults||[]).flatMap(tr=>tr.assertionResults||[]);
-          function isPassed(label){return all.some(a=>(a.title||a.fullName||'').includes(label)&&a.status==='passed');}
-          const checks=[
-            ["has required elements","Your page must include inputs #age and #priceOutput."],
-            ["displays correct price for a child","Make sure age 0–12 returns $7."],
-            ["displays correct price for a student","Make sure age 13–17 returns $12."],
-            ["displays correct price for an adult","Make sure age 18–64 returns $20."],
-            ["displays correct price for a senior","Make sure age 65+ returns $12."]
-          ];
-          const mark=(ok,label)=>\`\${ok?'✅':'❌'} \${label}\`;
-          let out=[];
-          out.push("# Unit 8.3 Autograder Summary");
-          out.push(\`**Passed:** \${passed}/\${total}  ·  **Failed:** \${failed}\\n\`);
-          out.push("## What you got right / need to fix\\n");
-          for(const [name,hint] of checks){
-            const ok=isPassed(name);
-            out.push(mark(ok,name));
-            if(!ok) out.push("   - Hint: "+hint);
+      
+          const all = (r.testResults || []).flatMap(tr => tr.assertionResults || []);
+      
+          // Match by short label appearing in title/fullName
+          function isPassed(label) {
+            return all.some(ar => {
+              const t = ar.title || '';
+              const f = ar.fullName || '';
+              const matched = t === label || f.endsWith(label) || f.includes(' ' + label);
+              return matched && ar.status === 'passed';
+            });
           }
-          out.push("\\n### Reminders");
-          out.push("- Use an input with id **age** and a button that calls `calculate()`.");
-          out.push("- Display the result in an element with id **priceOutput**.");
-          out.push("- Follow these rules:");
-          out.push("  - 0–12 → $7 (Child)");
-          out.push("  - 13–17 → $12 (Student)");
-          out.push("  - 18–64 → $20 (Adult)");
-          out.push("  - 65+ → $12 (Senior)");
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,out.join('\\n'));
+      
+          const checks = [
+            ["has required elements", "Your page must include inputs #age and #priceOutput."],
+            ["displays correct price for a child",   "Make sure age 0–12 returns $7."],
+            ["displays correct price for a student", "Make sure age 13–17 returns $12."],
+            ["displays correct price for an adult",  "Make sure age 18–64 returns $20."],
+            ["displays correct price for a senior",  "Make sure age 65+ returns $12."]
+          ];
+      
+          const checkIcon = ok => ok ? '\\u2705' : '\\u274C'; // ✅ / ❌
+          const mark = (ok, label) => `${checkIcon(ok)} ${label}`;
+      
+          let out = [];
+          out.push(`# Unit 8.3 Autograder Summary`);
+          out.push(`**Passed:** ${passed}/${total}  ·  **Failed:** ${failed}\n`);
+          out.push(`## What you got right / need to fix\n`);
+          for (const [name, hint] of checks) {
+            const ok = isPassed(name);
+            out.push(mark(ok, name));
+            if (!ok) out.push(`   - Hint: ${hint}`);
+          }
+          out.push(`\n### Reminders`);
+          out.push(`- Use an input with id **age** and a button that calls calculate().`);
+          out.push(`- Display the result in an element with id **priceOutput**.`);
+          out.push(`- Brackets: 0–12 → $7, 13–17 → $12, 18–64 → $20, 65+ → $12.`);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\\n'));
           NODE
+
 
       - name: Set job status from test results
         if: always()
