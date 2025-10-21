@@ -153,25 +153,24 @@ jobs:
           const failed = r.numFailedTests ?? 0;
           const runtimeErrSuites = r.numRuntimeErrorTestSuites ?? 0;
 
+          // Flatten all assertion results from all test files
           const all = (r.testResults || []).flatMap(tr => tr.assertionResults || []);
-          function isPassed(label) {
-            return all.some(ar => {
-              const t = ar.title || '';
-              const f = ar.fullName || '';
-              const matched = t === label || f.endsWith(label) || f.includes(' ' + label);
-              return matched && ar.status === 'passed';
-            });
+          const textOf = ar => (ar.title || ar.fullName || '');
+
+          // Robust matcher: treat as passed if any assertion whose text contains the keyword passed.
+          function passedByKeyword(keyword) {
+            return all.some(ar => textOf(ar).toLowerCase().includes(keyword) && ar.status === 'passed');
           }
 
           const checks = [
-            ["has required elements", "Your page must include inputs #age and #priceOutput."],
-            ["displays correct price for a child",   "Make sure age 0–12 returns $7."],
-            ["displays correct price for a student", "Make sure age 13–17 returns $12."],
-            ["displays correct price for an adult",  "Make sure age 18–64 returns $20."],
-            ["displays correct price for a senior",  "Make sure age 65+ returns $12."]
+            {label: "has required elements",  keyword: "has required elements", hint: "Your page must include inputs #age and #priceOutput."},
+            {label: "displays correct price for a child",   keyword: "child",   hint: "Make sure age 0–12 returns $7."},
+            {label: "displays correct price for a student", keyword: "student", hint: "Make sure age 13–17 returns $12."},
+            {label: "displays correct price for an adult",  keyword: "adult",   hint: "Make sure age 18–64 returns $20."},
+            {label: "displays correct price for a senior",  keyword: "senior",  hint: "Make sure age 65+ returns $12."}
           ];
 
-          const checkIcon = ok => ok ? '\u2705' : '\u274C';
+          const checkIcon = ok => ok ? '\\u2705' : '\\u274C'; // ✅ / ❌
           const mark = (ok, label) => `${checkIcon(ok)} ${label}`;
 
           const out = [];
@@ -186,20 +185,21 @@ jobs:
           out.push('');
           out.push(`## What you got right / need to fix`);
 
-          for (const [name, hint] of checks) {
-            const ok = isPassed(name);
-            out.push(mark(ok, name));
+          for (const {label, keyword, hint} of checks) {
+            const ok = passedByKeyword(keyword.toLowerCase());
+            out.push(mark(ok, label));
             if (!ok) out.push(`   - Hint: ${hint}`);
           }
 
           out.push('');
           out.push(`### Reminders`);
-          out.push(`- Use an input with id **age** and a button that calls \`calculate()\`.`);
+          out.push(`- Use an input with id **age** and a button that calls \\`calculate()\\`.`);
           out.push(`- Display the result in an element with id **priceOutput**.`);
           out.push(`- Brackets: 0–12 → $7, 13–17 → $12, 18–64 → $20, 65+ → $12.`);
 
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n'));
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\\n'));
           NODE
+
 
       - name: Set job status from test results
         if: always()
