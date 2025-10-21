@@ -171,17 +171,15 @@ jobs:
             {label: 'displays correct price for a senior', keyword: 'senior',                hint: 'Make sure age 65+ returns $12.'}
           ];
 
-          const checkIcon = ok => '\\u2705';   // default to ✅
-          const crossIcon = '\\u274C';         // ❌
-          function mark(ok, label) { return (ok ? checkIcon(ok) : crossIcon) + ' ' + label; }
+          const checkIcon = ok => (ok ? '✅' : '❌');
 
           const out = [];
           out.push('# Unit 8.3 Autograder Summary');
-          out.push('**Passed:** ' + passed + '/' + total + '  ·  **Failed:** ' + failed);
+          out.push(`**Passed:** ${passed}/${total}  ·  **Failed:** ${failed}`);
 
           if (total === 0 || runtimeErrSuites > 0) {
             out.push('');
-            out.push("> \\u26A0\\uFE0F No tests ran. This usually means required files weren't found (e.g., index.html).");
+            out.push('> ⚠️ No tests ran. This usually means required files were not found (e.g., index.html).');
           }
 
           out.push('');
@@ -189,8 +187,8 @@ jobs:
 
           for (const {label, keyword, hint} of checks) {
             const ok = passedByKeyword(keyword);
-            out.push(mark(ok, label));
-            if (!ok) out.push('   - Hint: ' + hint);
+            out.push(`${checkIcon(ok)} ${label}`);
+            if (!ok) out.push(`   - Hint: ${hint}`);
           }
 
           out.push('');
@@ -201,6 +199,7 @@ jobs:
 
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n'));
           NODE
+
 
       - name: Set job status from test results
         if: always()
